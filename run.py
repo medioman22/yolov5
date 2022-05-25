@@ -160,6 +160,7 @@ freeze = ['model.%s.' % x for x in range(10)]  # parameter names to freeze (full
 
 # shutil.copyfile('../coco_some_classes.yaml', './data')
 
-subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 1 --cache --img 512', shell=True)
+# subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 1 --cache --img 512', shell=True)
+subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 1 --img 512', shell=True)
 
 shutil.copytree('runs', '/workspace/out/runs')
