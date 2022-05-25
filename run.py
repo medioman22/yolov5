@@ -155,11 +155,11 @@ for idx, filename in enumerate(filenames):
 
 
 # retrain
-freeze = ['model.%s.' % x for x in range(24)]  # parameter names to freeze (full or partial)
+freeze = ['model.%s.' % x for x in range(10)]  # parameter names to freeze (full or partial)
+# freeze = ['model.%s.' % x for x in range(24)]  # parameter names to freeze (full or partial)
 
 # shutil.copyfile('../coco_some_classes.yaml', './data')
 
 subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 1 --cache --img 512', shell=True)
 
-os.mkdir('/workspace/out/runs')
 shutil.copytree('runs', '/workspace/out/runs')
