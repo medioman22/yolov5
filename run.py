@@ -9,7 +9,7 @@ import yaml
 
 # Download labels
 segments = False  # segment or box labels
-dir = Path('../datasets/coco/')  # dataset root dir
+dir = Path('/datasets/coco/')  # dataset root dir
 
 ##
 # Download data
@@ -31,9 +31,9 @@ download(urls, dir=dir.parent)
 
 # back up labels
 
-# if not os.path.exists('../datasets/coco/labels_bu'):
-#     os.mkdir('../datasets/coco/labels_bu')
-# shutil.copytree('../datasets/coco/labels/*', '../datasets/coco/labels_bu')
+# if not os.path.exists('/datasets/coco/labels_bu'):
+#     os.mkdir('/datasets/coco/labels_bu')
+# shutil.copytree('/datasets/coco/labels/*', '/datasets/coco/labels_bu')
 
 # relabel
 
@@ -134,7 +134,7 @@ remap = {classes_keep_nums[idx]:idx for idx in range(len(classes_keep_nums))}
 
 remap
 
-filenames = glob.glob('../datasets/coco/labels/*/*.txt')
+filenames = glob.glob('/datasets/coco/labels/*/*.txt')
 filenames.sort()
 filenames
 
@@ -158,9 +158,9 @@ for idx, filename in enumerate(filenames):
 freeze = ['model.%s.' % x for x in range(10)]  # parameter names to freeze (full or partial)
 # freeze = ['model.%s.' % x for x in range(24)]  # parameter names to freeze (full or partial)
 
-# shutil.copyfile('../coco_some_classes.yaml', './data')
+# shutil.copyfile('/coco_some_classes.yaml', './data')
 
 # subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 1 --cache --img 512', shell=True)
 # subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 20 --img 512', shell=True)
 
-# shutil.copytree('runs', '/workspace/out/runs')
+# shutil.copytree('runs', '/workspace/out')
