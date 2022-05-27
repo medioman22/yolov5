@@ -26,7 +26,7 @@ WORKDIR /temp/
 
 # Copy contents
 COPY . /temp/
-RUN git clone https://github.com/medioman22/yolov5 /temp/yolov5
+# RUN git clone https://github.com/medioman22/yolov5 /temp/yolov5
 
 # Set environment variables
 ENV OMP_NUM_THREADS=8
