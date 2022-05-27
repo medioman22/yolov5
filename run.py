@@ -9,7 +9,7 @@ import yaml
 
 # Download labels
 segments = False  # segment or box labels
-dir = Path('/datasets/coco/')  # dataset root dir
+dir = Path('/workspace/datasets/coco/')  # dataset root dir
 
 ##
 # Download data
@@ -31,9 +31,9 @@ download(urls, dir=dir.parent)
 
 # back up labels
 
-# if not os.path.exists('/datasets/coco/labels_bu'):
-#     os.mkdir('/datasets/coco/labels_bu')
-# shutil.copytree('/datasets/coco/labels/*', '/datasets/coco/labels_bu')
+# if not os.path.exists('/workspace/datasets/coco/labels_bu'):
+#     os.mkdir('/workspace/datasets/coco/labels_bu')
+# shutil.copytree('/workspace/datasets/coco/labels/*', '/workspace/datasets/coco/labels_bu')
 
 # relabel
 
@@ -134,7 +134,7 @@ remap = {classes_keep_nums[idx]:idx for idx in range(len(classes_keep_nums))}
 
 remap
 
-filenames = glob.glob('/datasets/coco/labels/*/*.txt')
+filenames = glob.glob('/workspace/datasets/coco/labels/*/*.txt')
 filenames.sort()
 filenames
 

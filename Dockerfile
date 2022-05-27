@@ -19,13 +19,13 @@ RUN pip install --no-cache -r requirements.txt albumentations wandb gsutil noteb
 
 # Create working directory
 RUN mkdir -p /usr/src/appls
-RUN mkdir -p /temp/
 RUN mkdir -p /workspace/out/
+RUN mkdir -p /workspace/tmp/
 
-WORKDIR /temp/
+WORKDIR /workspace/tmp
 
 # Copy contents
-COPY . /temp/
+COPY . /workspace/tmp
 # RUN git clone https://github.com/medioman22/yolov5 /temp/yolov5
 
 # Set environment variables
