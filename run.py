@@ -155,7 +155,7 @@ for idx, filename in enumerate(filenames):
 
 
 # retrain
-freeze = ['model.%s.' % x for x in range(10)]  # parameter names to freeze (full or partial)
+# freeze = ['model.%s.' % x for x in range(10)]  # parameter names to freeze (full or partial)
 # freeze = ['model.%s.' % x for x in range(24)]  # parameter names to freeze (full or partial)
 
 # shutil.copyfile('/coco_some_classes.yaml', './data')

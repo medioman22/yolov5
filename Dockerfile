@@ -9,6 +9,7 @@ ADD https://ultralytics.com/assets/Arial.ttf https://ultralytics.com/assets/Aria
 
 # Install linux packages
 RUN apt update && apt install --no-install-recommends -y zip htop screen libgl1-mesa-glx
+RUN apt update && apt install -y zip
 
 # Install pip packages
 COPY requirements.txt .
@@ -17,15 +18,17 @@ RUN pip uninstall -y torch torchvision torchtext Pillow
 RUN pip install --no-cache -r requirements.txt albumentations wandb gsutil notebook Pillow>=9.1.0 \
     --extra-index-url https://download.pytorch.org/whl/cu113
 
+RUN pip install torch==1.10.1+cu111 torchvision==0.11.2+cu111 torchaudio==0.10.1 -f https://download.pytorch.org/whl/torch_stable.html
+
 # Create working directory
 RUN mkdir -p /usr/src/appls
 RUN mkdir -p /workspace/out/
-RUN mkdir -p /workspace/tmp/
+RUN mkdir -p /tmpdir/
 
-WORKDIR /workspace/tmp
+WORKDIR /tmpdir
 
 # Copy contents
-COPY . /workspace/tmp
+COPY . /tmpdir
 # RUN git clone https://github.com/medioman22/yolov5 /temp/yolov5
 
 # Set environment variables
