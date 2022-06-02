@@ -29,13 +29,13 @@ if __name__ == "__main__":
     os.mkdir('labels/train')
     os.mkdir('labels/valid')
 
-    move_all_in_folder('test/images' 'images/test')
-    move_all_in_folder('train/images' 'images/train')
-    move_all_in_folder('valid/images' 'images/valid')
+    move_all_in_folder('test/images', 'images/test')
+    move_all_in_folder('train/images', 'images/train')
+    move_all_in_folder('valid/images', 'images/valid')
 
-    move_all_in_folder('test/labels' 'labels/test')
-    move_all_in_folder('train/labels' 'labels/train')
-    move_all_in_folder('valid/labels' 'labels/valid')
+    move_all_in_folder('test/labels', 'labels/test')
+    move_all_in_folder('train/labels', 'labels/train')
+    move_all_in_folder('valid/labels', 'labels/valid')
 
     shutil.rmtree('test')
     shutil.rmtree('train')
