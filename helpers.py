@@ -1,5 +1,3 @@
-# download coco
-
 import os
 import shutil
 import subprocess
@@ -37,8 +35,10 @@ def download_labels(dir = None, segments = False):
     urls = [url + ('coco2017labels-segments.zip' if segments else 'coco2017labels.zip')]  # labels
     download(urls, dir=dir.parent)
 
+    import os
+
 # relabel
-def relabel(dir = None):
+def relabel_coco(dir = None, remove_images_without_labels = False, subset = None):
 
     if dir == None:
         dir = '/workspace/datasets/coco/labels'
@@ -127,7 +127,7 @@ def relabel(dir = None):
 
 
     original_classes_inv = {original_classes[x]:x for x in original_classes.keys()}
-    classes_keep = ['person', 'cup', 'laptop', 'mouse', 'keyboard', 'cell phone', 'book']
+    classes_keep = ['cup', 'laptop', 'mouse', 'keyboard', 'cell phone', 'book']
     classes_keep_nums = [original_classes_inv[x] for x in classes_keep]
     classes_keep_nums = [x-1 for x in classes_keep_nums]
     classes_keep_nums
@@ -136,33 +136,36 @@ def relabel(dir = None):
 
     remap
 
-    filenames = glob.glob('dir'+'/*/*.txt')
+    filenames = glob.glob(dir+'/*/*.txt')
     filenames.sort()
-    filenames
+    print(filenames)
 
-    l = len(filenames)
+    
+    if subset==None:
+      subset = len(filenames)
 
-    for idx, filename in enumerate(filenames):
+    def remove_img_label(filename):
+      
+        print(f'deleting image + label for {filename}')
+        os.remove(filename.replace('labels', 'images').replace('txt', 'jpg'))
+        os.remove(filename)
+      
+
+    for idx, filename in enumerate(filenames[:subset]):
         try:
             labels = pd.read_csv(filename, delimiter=' ', header=None)
             lab_corr = labels.loc[labels[0].isin(classes_keep_nums)]
             lab_corr = lab_corr.replace({0: remap})
-            lab_corr.to_csv(filename, index = False, header = False, sep = ' ')
-            # print(f"corrected {filename}")
+            if remove_images_without_labels and len(lab_corr)==0:
+              remove_img_label(filename)
+            else:
+              lab_corr.to_csv(filename, index = False, header = False, sep = ' ')
+              # print(f"corrected {filename}")
         except:
             # print(f"no labels in {filename}")
+            
+            if remove_images_without_labels:
+              remove_img_label(filename)
             pass
         if not idx%100:
-            print(f"done {idx} of {l} ({idx/l*100:.2f}%)")
-
-
-# retrain
-# freeze = ['model.%s.' % x for x in range(10)]  # parameter names to freeze (full or partial)
-# freeze = ['model.%s.' % x for x in range(24)]  # parameter names to freeze (full or partial)
-
-# shutil.copyfile('/coco_some_classes.yaml', './data')
-
-# subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 1 --cache --img 512', shell=True)
-# subprocess.run('python train.py --batch 48 --weights yolov5s.pt --data data/coco_some_classes.yaml --epochs 20 --img 512', shell=True)
-
-# shutil.copytree('runs', '/workspace/out')
+            print(f"done {idx} of {subset} ({idx/subset*100:.2f}%)")
