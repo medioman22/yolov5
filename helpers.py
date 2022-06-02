@@ -169,3 +169,63 @@ def relabel_coco(dir = None, remove_images_without_labels = False, subset = None
             pass
         if not idx%100:
             print(f"done {idx} of {subset} ({idx/subset*100:.2f}%)")
+
+import os
+
+# relabel
+def relabel_hands(dir = None, remove_images_without_labels = False, subset = None, offset = 0):
+
+    if dir == None:
+        dir = '/workspace/datasets/coco/labels'
+
+    original_classes = {0: u'__background__',
+    1: u'myleft',
+    2: u'myright',
+    3: u'yourleft',
+    4: u'yourright'}
+
+
+    original_classes_inv = {original_classes[x]:x for x in original_classes.keys()}
+    classes_keep = ['myleft', 'myright', 'yourleft', 'yourright']
+    classes_keep_nums = [original_classes_inv[x] for x in classes_keep]
+    classes_keep_nums = [x-1 for x in classes_keep_nums]
+    classes_keep_nums
+
+    remap = {classes_keep_nums[idx]:idx+offset for idx in range(len(classes_keep_nums))}
+
+    remap
+
+    filenames = glob.glob(dir+'/*/*.txt')
+    filenames.sort()
+    print(filenames)
+
+    
+    if subset==None:
+      subset = len(filenames)
+
+    def remove_img_label(filename):
+      
+        print(f'deleting image + label for {filename}')
+        os.remove(filename.replace('labels', 'images').replace('txt', 'jpg'))
+        os.remove(filename)
+      
+
+    for idx, filename in enumerate(filenames[:subset]):
+        try:
+            labels = pd.read_csv(filename, delimiter=' ', header=None)
+            lab_corr = labels.loc[labels[0].isin(classes_keep_nums)]
+            lab_corr = lab_corr.replace({0: remap})
+            if remove_images_without_labels and len(lab_corr)==0:
+              remove_img_label(filename)
+            else:
+              lab_corr.to_csv(filename, index = False, header = False, sep = ' ')
+              # print(f"corrected {filename}")
+        except:
+            # print(f"no labels in {filename}")
+            
+            if remove_images_without_labels:
+              remove_img_label(filename)
+            pass
+        if not idx%100:
+            print(f"done {idx} of {subset} ({idx/subset*100:.2f}%)")
+
