@@ -52,3 +52,5 @@ if __name__ == "__main__":
     os.mkdir(ws_dir + '/datasets/hand_detect')
     shutil.move('labels', ws_dir+'/datasets/hand_detect')
     shutil.move('images', ws_dir+'/datasets/hand_detect')
+
+    relabel_hands(dir = '/workspace/datasets/hand_detect/labels', remove_images_without_labels = True, subset = None, offset = 6)
