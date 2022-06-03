@@ -54,3 +54,9 @@ if __name__ == "__main__":
     shutil.move('images', ws_dir+'/datasets/hand_detect')
 
     relabel_hands(dir = '/workspace/datasets/hand_detect/labels', remove_images_without_labels = True, subset = None, offset = 6)
+
+    move_all_in_folder('/workspace/datasets/hand_detect/images/train', '/workspace/datasets/coco/images/train2017')
+    move_all_in_folder('/workspace/datasets/hand_detect/images/valid', '/workspace/datasets/coco/images/val2017')
+
+    move_all_in_folder('/workspace/datasets/hand_detect/labels/train', '/workspace/datasets/coco/labels/train2017')
+    move_all_in_folder('/workspace/datasets/hand_detect/labels/valid', '/workspace/datasets/coco/labels/val2017')
