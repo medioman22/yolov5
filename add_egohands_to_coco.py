@@ -9,16 +9,13 @@ def move_all_in_folder(fol, target_fol):
     for file_name in file_names:
         shutil.move(os.path.join(fol, file_name), target_fol)
 
-
-if __name__ == "__main__":
-    # download coco
+def download_and_process():
 
 
     # hands dataset 
 
     subprocess.run('curl -L -q "https://public.roboflow.com/ds/L4HgyEQXXH?key=eZpjwNJLf1" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip', shell=True)
     
-
     os.mkdir('images')
     os.mkdir('images/test')
     os.mkdir('images/train')
@@ -60,3 +57,7 @@ if __name__ == "__main__":
 
     move_all_in_folder('/workspace/datasets/hand_detect/labels/train', '/workspace/datasets/coco/labels/train2017')
     move_all_in_folder('/workspace/datasets/hand_detect/labels/valid', '/workspace/datasets/coco/labels/val2017')
+
+if __name__ == "__main__":
+
+    download_and_process()
