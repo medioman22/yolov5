@@ -38,7 +38,6 @@ def download_and_process():
     shutil.rmtree('train')
     shutil.rmtree('valid')
 
-
     ws_dir='/workspace'
 
     if not os.path.exists(ws_dir):
@@ -57,6 +56,8 @@ def download_and_process():
 
     move_all_in_folder('/workspace/datasets/hand_detect/labels/train', '/workspace/datasets/coco/labels/train2017')
     move_all_in_folder('/workspace/datasets/hand_detect/labels/valid', '/workspace/datasets/coco/labels/val2017')
+
+    shutil.move('/workspace/datasets/coco', '/workspace/datasets/coco_subset_and_hands')
 
 if __name__ == "__main__":
 

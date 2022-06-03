@@ -138,7 +138,7 @@ def relabel_coco(dir = None, remove_images_without_labels = False, subset = None
 
     filenames = glob.glob(dir+'/*/*.txt')
     filenames.sort()
-    print(filenames)
+    # print(filenames)
 
     
     if subset==None:
@@ -146,7 +146,7 @@ def relabel_coco(dir = None, remove_images_without_labels = False, subset = None
 
     def remove_img_label(filename):
       
-        print(f'deleting image + label for {filename}')
+        # print(f'deleting image + label for {filename}')
         os.remove(filename.replace('labels', 'images').replace('txt', 'jpg'))
         os.remove(filename)
       
@@ -197,7 +197,7 @@ def relabel_hands(dir = None, remove_images_without_labels = False, subset = Non
 
     filenames = glob.glob(dir+'/*/*.txt')
     filenames.sort()
-    print(filenames)
+    # print(filenames)
 
     
     if subset==None:
@@ -205,7 +205,7 @@ def relabel_hands(dir = None, remove_images_without_labels = False, subset = Non
 
     def remove_img_label(filename):
       
-        print(f'deleting image + label for {filename}')
+        # print(f'deleting image + label for {filename}')
         os.remove(filename.replace('labels', 'images').replace('txt', 'jpg'))
         os.remove(filename)
       
