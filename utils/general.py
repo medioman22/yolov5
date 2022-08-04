@@ -52,7 +52,7 @@ np.set_printoptions(linewidth=320, formatter={'float_kind': '{:11.5g}'.format}) 
 pd.options.display.max_columns = 10
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ['NUMEXPR_MAX_THREADS'] = str(NUM_THREADS)  # NumExpr max threads
-os.environ['OMP_NUM_THREADS'] = str(NUM_THREADS)  # OpenMP max threads (PyTorch and SciPy)
+os.environ['OMP_NUM_THREADS'] = '1' if platform.system() == 'darwin' else str(NUM_THREADS)  # OpenMP (PyTorch and SciPy)
 
 
 def is_kaggle():
@@ -85,7 +85,7 @@ def set_logging(name=None, verbose=VERBOSE):
         for h in logging.root.handlers:
             logging.root.removeHandler(h)  # remove all handlers associated with the root logger object
     rank = int(os.getenv('RANK', -1))  # rank in world for Multi-GPU trainings
-    level = logging.INFO if verbose and rank in {-1, 0} else logging.WARNING
+    level = logging.INFO if verbose and rank in {-1, 0} else logging.ERROR
     log = logging.getLogger(name)
     log.setLevel(level)
     handler = logging.StreamHandler()
@@ -195,14 +195,22 @@ def print_args(args: Optional[dict] = None, show_file=True, show_fcn=False):
     LOGGER.info(colorstr(s) + ', '.join(f'{k}={v}' for k, v in args.items()))
 
 
-def init_seeds(seed=0):
+def init_seeds(seed=0, deterministic=False):
     # Initialize random number generator (RNG) seeds https://pytorch.org/docs/stable/notes/randomness.html
     # cudnn seed 0 settings are slower and more reproducible, else faster and less reproducible
     import torch.backends.cudnn as cudnn
+
+    if deterministic and check_version(torch.__version__, '1.12.0'):  # https://github.com/ultralytics/yolov5/pull/8213
+        torch.use_deterministic_algorithms(True)
+        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+        os.environ['PYTHONHASHSEED'] = str(seed)
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     cudnn.benchmark, cudnn.deterministic = (False, True) if seed == 0 else (True, False)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # for Multi-GPU, exception safe
 
 
 def intersect_dicts(da, db, exclude=()):
@@ -216,9 +224,15 @@ def get_latest_run(search_dir='.'):
     return max(last_list, key=os.path.getctime) if last_list else ''
 
 
-def is_docker():
-    # Is environment a Docker container?
-    return Path('/workspace').exists()  # or Path('/.dockerenv').exists()
+def is_docker() -> bool:
+    """Check if the process runs inside a docker container."""
+    if Path("/.dockerenv").exists():
+        return True
+    try:  # check if docker is in control groups
+        with open("/proc/self/cgroup") as file:
+            return any("docker" in line for line in file)
+    except OSError:
+        return False
 
 
 def is_colab():
@@ -296,20 +310,27 @@ def git_describe(path=ROOT):  # path must be a directory
 
 @try_except
 @WorkingDirectory(ROOT)
-def check_git_status():
-    # Recommend 'git pull' if code is out of date
-    msg = ', for updates see https://github.com/ultralytics/yolov5'
+def check_git_status(repo='ultralytics/yolov5'):
+    # YOLOv5 status check, recommend 'git pull' if code is out of date
+    url = f'https://github.com/{repo}'
+    msg = f', for updates see {url}'
     s = colorstr('github: ')  # string
     assert Path('.git').exists(), s + 'skipping check (not a git repository)' + msg
-    assert not is_docker(), s + 'skipping check (Docker image)' + msg
     assert check_online(), s + 'skipping check (offline)' + msg
 
-    cmd = 'git fetch && git config --get remote.origin.url'
-    url = check_output(cmd, shell=True, timeout=5).decode().strip().rstrip('.git')  # git fetch
+    splits = re.split(pattern=r'\s', string=check_output('git remote -v', shell=True).decode())
+    matches = [repo in s for s in splits]
+    if any(matches):
+        remote = splits[matches.index(True) - 1]
+    else:
+        remote = 'ultralytics'
+        check_output(f'git remote add {remote} {url}', shell=True)
+    check_output(f'git fetch {remote}', shell=True, timeout=5)  # git fetch
     branch = check_output('git rev-parse --abbrev-ref HEAD', shell=True).decode().strip()  # checked out
-    n = int(check_output(f'git rev-list {branch}..origin/master --count', shell=True))  # commits behind
+    n = int(check_output(f'git rev-list {branch}..{remote}/master --count', shell=True))  # commits behind
     if n > 0:
-        s += f"⚠️ YOLOv5 is out of date by {n} commit{'s' * (n > 1)}. Use `git pull` or `git clone {url}` to update."
+        pull = 'git pull' if remote == 'origin' else f'git pull {remote} master'
+        s += f"⚠️ YOLOv5 is out of date by {n} commit{'s' * (n > 1)}. Use `{pull}` or `git clone {url}` to update."
     else:
         s += f'up to date with {url} ✅'
     LOGGER.info(emojis(s))  # emoji-safe
@@ -355,7 +376,7 @@ def check_requirements(requirements=ROOT / 'requirements.txt', exclude=(), insta
                 LOGGER.info(f"{s}, attempting auto-update...")
                 try:
                     assert check_online(), f"'pip install {r}' skipped (offline)"
-                    LOGGER.info(check_output(f"pip install '{r}' {cmds[i] if cmds else ''}", shell=True).decode())
+                    LOGGER.info(check_output(f'pip install "{r}" {cmds[i] if cmds else ""}', shell=True).decode())
                     n += 1
                 except Exception as e:
                     LOGGER.warning(f'{prefix} {e}')
@@ -448,8 +469,7 @@ def check_font(font=FONT, progress=False):
 
 
 def check_dataset(data, autodownload=True):
-    # Download and/or unzip dataset if not found locally
-    # Usage: https://github.com/ultralytics/yolov5/releases/download/v1.0/coco128_with_yaml.zip
+    # Download, check and/or unzip dataset if not found locally
 
     # Download (optional)
     extract_dir = ''
@@ -463,6 +483,13 @@ def check_dataset(data, autodownload=True):
         with open(data, errors='ignore') as f:
             data = yaml.safe_load(f)  # dictionary
 
+    # Checks
+    for k in 'train', 'val', 'nc':
+        assert k in data, emojis(f"data.yaml '{k}:' field missing ❌")
+    if 'names' not in data:
+        LOGGER.warning(emojis("data.yaml 'names:' field missing ⚠️, assigning default names 'class0', 'class1', etc."))
+        data['names'] = [f'class{i}' for i in range(data['nc'])]  # default names
+
     # Resolve paths
     path = Path(extract_dir or data.get('path') or '')  # optional 'path' default to '.'
     if not path.is_absolute():
@@ -472,14 +499,11 @@ def check_dataset(data, autodownload=True):
             data[k] = str(path / data[k]) if isinstance(data[k], str) else [str(path / x) for x in data[k]]
 
     # Parse yaml
-    assert 'nc' in data, "Dataset 'nc' key missing."
-    if 'names' not in data:
-        data['names'] = [f'class{i}' for i in range(data['nc'])]  # assign class names if missing
     train, val, test, s = (data.get(x) for x in ('train', 'val', 'test', 'download'))
     if val:
         val = [Path(x).resolve() for x in (val if isinstance(val, list) else [val])]  # val path
         if not all(x.exists() for x in val):
-            LOGGER.info(emojis('\nDataset not found ⚠, missing paths %s' % [str(x) for x in val if not x.exists()]))
+            LOGGER.info(emojis('\nDataset not found ⚠️, missing paths %s' % [str(x) for x in val if not x.exists()]))
             if not s or not autodownload:
                 raise Exception(emojis('Dataset not found ❌'))
             t = time.time()
@@ -506,27 +530,27 @@ def check_dataset(data, autodownload=True):
 
 def check_amp(model):
     # Check PyTorch Automatic Mixed Precision (AMP) functionality. Return True on correct operation
-    from models.common import AutoShape
+    from models.common import AutoShape, DetectMultiBackend
 
-    if next(model.parameters()).device.type == 'cpu':  # get model device
-        return False
+    def amp_allclose(model, im):
+        # All close FP32 vs AMP results
+        m = AutoShape(model, verbose=False)  # model
+        a = m(im).xywhn[0]  # FP32 inference
+        m.amp = True
+        b = m(im).xywhn[0]  # AMP inference
+        return a.shape == b.shape and torch.allclose(a, b, atol=0.1)  # close to 10% absolute tolerance
+
     prefix = colorstr('AMP: ')
-    file = ROOT / 'data' / 'images' / 'bus.jpg'  # image to test
-    if file.exists():
-        im = cv2.imread(file)[..., ::-1]  # OpenCV image (BGR to RGB)
-    elif check_online():
-        im = 'https://ultralytics.com/images/bus.jpg'
-    else:
-        LOGGER.warning(emojis(f'{prefix}checks skipped ⚠️, not online.'))
-        return True
-    m = AutoShape(model, verbose=False)  # model
-    a = m(im).xywhn[0]  # FP32 inference
-    m.amp = True
-    b = m(im).xywhn[0]  # AMP inference
-    if (a.shape == b.shape) and torch.allclose(a, b, atol=0.05):  # close to 5% absolute tolerance
+    device = next(model.parameters()).device  # get model device
+    if device.type == 'cpu':
+        return False  # AMP disabled on CPU
+    f = ROOT / 'data' / 'images' / 'bus.jpg'  # image to check
+    im = f if f.exists() else 'https://ultralytics.com/images/bus.jpg' if check_online() else np.ones((640, 640, 3))
+    try:
+        assert amp_allclose(model, im) or amp_allclose(DetectMultiBackend('yolov5n.pt', device), im)
         LOGGER.info(emojis(f'{prefix}checks passed ✅'))
         return True
-    else:
+    except Exception:
         help_url = 'https://github.com/ultralytics/yolov5/issues/7908'
         LOGGER.warning(emojis(f'{prefix}checks failed ❌, disabling Automatic Mixed Precision. See {help_url}'))
         return False
@@ -551,7 +575,7 @@ def download(url, dir='.', unzip=True, delete=True, curl=False, threads=1, retry
             for i in range(retry + 1):
                 if curl:
                     s = 'sS' if threads > 1 else ''  # silent
-                    r = os.system(f"curl -{s}L '{url}' -o '{f}' --retry 9 -C -")  # curl download
+                    r = os.system(f'curl -{s}L "{url}" -o "{f}" --retry 9 -C -')  # curl download with retry, continue
                     success = r == 0
                 else:
                     torch.hub.download_url_to_file(url, f, progress=threads == 1)  # torch download
@@ -633,7 +657,7 @@ def labels_to_class_weights(labels, nc=80):
         return torch.Tensor()
 
     labels = np.concatenate(labels, 0)  # labels.shape = (866643, 5) for COCO
-    classes = labels[:, 0].astype(np.int)  # labels = [class xywh]
+    classes = labels[:, 0].astype(int)  # labels = [class xywh]
     weights = np.bincount(classes, minlength=nc)  # occurrences per class
 
     # Prepend gridpoint count (for uCE training)
@@ -643,13 +667,13 @@ def labels_to_class_weights(labels, nc=80):
     weights[weights == 0] = 1  # replace empty bins with 1
     weights = 1 / weights  # number of targets per class
     weights /= weights.sum()  # normalize
-    return torch.from_numpy(weights)
+    return torch.from_numpy(weights).float()
 
 
 def labels_to_image_weights(labels, nc=80, class_weights=np.ones(80)):
     # Produces image weights based on class_weights and image contents
     # Usage: index = random.choices(range(n), weights=image_weights, k=1)  # weighted image sample
-    class_counts = np.array([np.bincount(x[:, 0].astype(np.int), minlength=nc) for x in labels])
+    class_counts = np.array([np.bincount(x[:, 0].astype(int), minlength=nc) for x in labels])
     return (class_weights.reshape(1, nc) * class_counts).sum(1)
 
 
@@ -735,6 +759,7 @@ def segments2boxes(segments):
 def resample_segments(segments, n=1000):
     # Up-sample an (n,2) segment
     for i, s in enumerate(segments):
+        s = np.concatenate((s, s[0:1, :]), axis=0)
         x = np.linspace(0, len(s) - 1, n)
         xp = np.arange(len(s))
         segments[i] = np.concatenate([np.interp(x, xp, s[:, i]) for i in range(2)]).reshape(2, -1).T  # segment xy
@@ -795,7 +820,7 @@ def non_max_suppression(prediction,
     # min_wh = 2  # (pixels) minimum box width and height
     max_wh = 7680  # (pixels) maximum box width and height
     max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
-    time_limit = 0.1 + 0.03 * bs  # seconds to quit after
+    time_limit = 0.3 + 0.03 * bs  # seconds to quit after
     redundant = True  # require redundant detections
     multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
     merge = False  # use merge-NMS

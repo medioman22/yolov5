@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import os
 import platform
 import sys
@@ -49,7 +50,7 @@ class Detect(nn.Module):
         self.anchor_grid = [torch.zeros(1)] * self.nl  # init anchor grid
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
-        self.inplace = inplace  # use in-place ops (e.g. slice assignment)
+        self.inplace = inplace  # use inplace ops (e.g. slice assignment)
 
     def forward(self, x):
         z = []  # inference output
@@ -207,9 +208,9 @@ class Model(nn.Module):
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
         m = self.model[-1]  # Detect() module
         for mi, s in zip(m.m, m.stride):  # from
-            b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
-            b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-            b.data[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
+            b = mi.bias.view(m.na, -1).detach()  # conv.bias(255) to (3,85)
+            b[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+            b[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
             mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def _print_biases(self):
@@ -259,10 +260,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
         m = eval(m) if isinstance(m, str) else m  # eval strings
         for j, a in enumerate(args):
-            try:
+            with contextlib.suppress(NameError):
                 args[j] = eval(a) if isinstance(a, str) else a  # eval strings
-            except NameError:
-                pass
 
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in (Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,

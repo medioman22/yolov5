@@ -305,7 +305,7 @@ class Concat(nn.Module):
 
 class DetectMultiBackend(nn.Module):
     # YOLOv5 MultiBackend class for python inference on various backends
-    def __init__(self, weights='yolov5s.pt', device=torch.device('cpu'), dnn=False, data=None, fp16=False):
+    def __init__(self, weights='yolov5s.pt', device=torch.device('cpu'), dnn=False, data=None, fp16=False, fuse=True):
         # Usage:
         #   PyTorch:              weights = *.pt
         #   TorchScript:                    *.torchscript
@@ -323,15 +323,15 @@ class DetectMultiBackend(nn.Module):
         super().__init__()
         w = str(weights[0] if isinstance(weights, list) else weights)
         pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs = self.model_type(w)  # get backend
-        stride, names = 32, [f'class{i}' for i in range(1000)]  # assign defaults
         w = attempt_download(w)  # download if not local
         fp16 &= (pt or jit or onnx or engine) and device.type != 'cpu'  # FP16
-        if data:  # data.yaml path (optional)
+        stride, names = 32, [f'class{i}' for i in range(1000)]  # assign defaults
+        if data:  # assign class names (optional)
             with open(data, errors='ignore') as f:
-                names = yaml.safe_load(f)['names']  # class names
+                names = yaml.safe_load(f)['names']
 
         if pt:  # PyTorch
-            model = attempt_load(weights if isinstance(weights, list) else w, map_location=device)
+            model = attempt_load(weights if isinstance(weights, list) else w, device=device, inplace=True, fuse=fuse)
             stride = max(int(model.stride.max()), 32)  # model stride
             names = model.module.names if hasattr(model, 'module') else model.names  # get class names
             model.half() if fp16 else model.float()
@@ -361,13 +361,21 @@ class DetectMultiBackend(nn.Module):
         elif xml:  # OpenVINO
             LOGGER.info(f'Loading {w} for OpenVINO inference...')
             check_requirements(('openvino',))  # requires openvino-dev: https://pypi.org/project/openvino-dev/
-            from openvino.runtime import Core
+            from openvino.runtime import Core, Layout, get_batch
             ie = Core()
             if not Path(w).is_file():  # if not *.xml
                 w = next(Path(w).glob('*.xml'))  # get *.xml file from *_openvino_model dir
             network = ie.read_model(model=w, weights=Path(w).with_suffix('.bin'))
-            executable_network = ie.compile_model(model=network, device_name="CPU")
-            self.output_layer = next(iter(executable_network.outputs))
+            if network.get_parameters()[0].get_layout().empty:
+                network.get_parameters()[0].set_layout(Layout("NCHW"))
+            batch_dim = get_batch(network)
+            if batch_dim.is_static:
+                batch_size = batch_dim.get_length()
+            executable_network = ie.compile_model(network, device_name="CPU")  # device_name="MYRIAD" for Intel NCS2
+            output_layer = next(iter(executable_network.outputs))
+            meta = Path(w).with_suffix('.yaml')
+            if meta.exists():
+                stride, names = self._load_metadata(meta)  # load metadata
         elif engine:  # TensorRT
             LOGGER.info(f'Loading {w} for TensorRT inference...')
             import tensorrt as trt  # https://developer.nvidia.com/nvidia-tensorrt-download
@@ -376,19 +384,24 @@ class DetectMultiBackend(nn.Module):
             logger = trt.Logger(trt.Logger.INFO)
             with open(w, 'rb') as f, trt.Runtime(logger) as runtime:
                 model = runtime.deserialize_cuda_engine(f.read())
+            context = model.create_execution_context()
             bindings = OrderedDict()
             fp16 = False  # default updated below
+            dynamic_input = False
             for index in range(model.num_bindings):
                 name = model.get_binding_name(index)
                 dtype = trt.nptype(model.get_binding_dtype(index))
-                shape = tuple(model.get_binding_shape(index))
+                if model.binding_is_input(index):
+                    if -1 in tuple(model.get_binding_shape(index)):  # dynamic
+                        dynamic_input = True
+                        context.set_binding_shape(index, tuple(model.get_profile_shape(0, index)[2]))
+                    if dtype == np.float16:
+                        fp16 = True
+                shape = tuple(context.get_binding_shape(index))
                 data = torch.from_numpy(np.empty(shape, dtype=np.dtype(dtype))).to(device)
                 bindings[name] = Binding(name, dtype, shape, data, int(data.data_ptr()))
-                if model.binding_is_input(index) and dtype == np.float16:
-                    fp16 = True
             binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
-            context = model.create_execution_context()
-            batch_size = bindings['images'].shape[0]
+            batch_size = bindings['images'].shape[0]  # if dynamic, this is instead max batch size
         elif coreml:  # CoreML
             LOGGER.info(f'Loading {w} for CoreML inference...')
             import coremltools as ct
@@ -433,11 +446,16 @@ class DetectMultiBackend(nn.Module):
                 output_details = interpreter.get_output_details()  # outputs
             elif tfjs:
                 raise Exception('ERROR: YOLOv5 TF.js inference is not supported')
+            else:
+                raise Exception(f'ERROR: {w} is not a supported format')
         self.__dict__.update(locals())  # assign all variables to self
 
     def forward(self, im, augment=False, visualize=False, val=False):
         # YOLOv5 MultiBackend inference
         b, ch, h, w = im.shape  # batch, channel, height, width
+        if self.fp16 and im.dtype != torch.float16:
+            im = im.half()  # to FP16
+
         if self.pt:  # PyTorch
             y = self.model(im, augment=augment, visualize=visualize)[0]
         elif self.jit:  # TorchScript
@@ -453,7 +471,12 @@ class DetectMultiBackend(nn.Module):
             im = im.cpu().numpy()  # FP32
             y = self.executable_network([im])[self.output_layer]
         elif self.engine:  # TensorRT
-            assert im.shape == self.bindings['images'].shape, (im.shape, self.bindings['images'].shape)
+            if im.shape != self.bindings['images'].shape and self.dynamic_input:
+                self.context.set_binding_shape(self.model.get_binding_index('images'), im.shape)  # reshape if dynamic
+                self.bindings['images'] = self.bindings['images']._replace(shape=im.shape)
+            assert im.shape == self.bindings['images'].shape, (
+                f"image shape {im.shape} exceeds model max shape {self.bindings['images'].shape}" if self.dynamic_input
+                else f"image shape {im.shape} does not match model shape {self.bindings['images'].shape}")
             self.binding_addrs['images'] = int(im.data_ptr())
             self.context.execute_v2(list(self.binding_addrs.values()))
             y = self.bindings['output'].data
@@ -495,11 +518,11 @@ class DetectMultiBackend(nn.Module):
 
     def warmup(self, imgsz=(1, 3, 640, 640)):
         # Warmup model by running inference once
-        if any((self.pt, self.jit, self.onnx, self.engine, self.saved_model, self.pb)):  # warmup types
-            if self.device.type != 'cpu':  # only warmup GPU models
-                im = torch.zeros(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
-                for _ in range(2 if self.jit else 1):  #
-                    self.forward(im)  # warmup
+        warmup_types = self.pt, self.jit, self.onnx, self.engine, self.saved_model, self.pb
+        if any(warmup_types) and self.device.type != 'cpu':
+            im = torch.zeros(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
+            for _ in range(2 if self.jit else 1):  #
+                self.forward(im)  # warmup
 
     @staticmethod
     def model_type(p='path/to/model.pt'):
@@ -512,6 +535,13 @@ class DetectMultiBackend(nn.Module):
         xml |= xml2  # *_openvino_model or *.xml
         tflite &= not edgetpu  # *.tflite
         return pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs
+
+    @staticmethod
+    def _load_metadata(f='path/to/meta.yaml'):
+        # Load metadata from meta.yaml if it exists
+        with open(f, errors='ignore') as f:
+            d = yaml.safe_load(f)
+        return d['stride'], d['names']  # assign stride, names
 
 
 class AutoShape(nn.Module):
@@ -532,6 +562,9 @@ class AutoShape(nn.Module):
         self.dmb = isinstance(model, DetectMultiBackend)  # DetectMultiBackend() instance
         self.pt = not self.dmb or model.pt  # PyTorch model
         self.model = model.eval()
+        if self.pt:
+            m = self.model.model.model[-1] if self.dmb else self.model.model[-1]  # Detect()
+            m.inplace = False  # Detect.inplace=False for safe multithread inference
 
     def _apply(self, fn):
         # Apply to(), cpu(), cuda(), half() to model tensors that are not parameters or registered buffers
