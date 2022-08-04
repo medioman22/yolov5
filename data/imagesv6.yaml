@@ -8,11 +8,11 @@
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: C:\Users/mmacchini/My Drive/MagicLeap/Data/Datasets/3_object_detection/imagesV6_subset  # dataset root dir
+path: /workspace/out/data/datasets/imagesV6_subset_from_colab_12_classes  # dataset root dir
 train: images/train  # train images (relative to 'path') 128 images
 val: images/val  # val images (relative to 'path') 128 images
 test:  # test images (optional)
 
 # Classes
-nc: 9  # number of classes
-names: ["Human hand", "Computer keyboard", "Computer mouse", "Computer mouse", "Coffee cup", "Mug", "Mobile phone", "Book", "Pen"]  # class names
+nc: 11  # number of classes
+names: ["Laptop", "Computer keyboard", "Computer mouse", "Computer monitor", "Mug", "Coffee cup", "Mobile phone", "Tablet computer", "Book", "Pen", Human hand"]  # class names
